@@ -1,0 +1,148 @@
+import pandas as pd
+import sqlite3
+import re
+import time
+from tqdm import tqdm
+from itertools import product
+db = sqlite3.connect('DataBase1.db')
+db2 = sqlite3.connect('DataBase2.db')
+sql = db.cursor()
+sql2 = db2.cursor()
+
+# справочник плохих символов
+bad_sym = {'b': 'в', 'c': 'с', 'h': 'н', 'p': 'р', 'y': 'у', 'a': 'а',
+           'e': 'е', 'k': 'к', 'm': 'м', 'o': 'о', 't': 'т', 'x': 'х'}
+
+
+def multi_rep(target_str, bad_sym_rep):
+    # получаем заменяемое: подставляемое из словаря в цикле
+    for i, j in bad_sym_rep.items():
+        # меняем все target_str на подставляемое
+        target_str = target_str.replace(i, j)
+    return target_str
+
+
+def import_db(import_q):
+    sku_list = []
+    if import_q == "Да" or import_q == "да" or import_q == "Y" or import_q == "y":
+        print("Подождите, идет импортирование...")
+        data_xlsx = pd.read_excel('Nsi.xlsx', index_col=0)
+        data_xlsx.to_sql('Nsi', db, if_exists='replace', index=True, dtype="object")
+        sku_base = sql.execute("SELECT * FROM Nsi")
+        for sku in sku_base:
+            sku_process_1 = multi_rep(str(sku[1]).lower(), bad_sym)
+            sku_process_2 = multi_rep(str(sku[2]).lower(), bad_sym)
+            sku_process_3 = multi_rep(str(sku[3]).lower(), bad_sym)
+            # Добавляем в лист обработанную базу SKU
+            sku_list.append((sku[0],
+                             sku[1],
+                             sku[2],
+                             sku[3],
+                             sku[4],
+                             sku[5],
+                             sku[6],
+                             sku_process_1,
+                             sku_process_2,
+                             sku_process_3,))
+        df = pd.DataFrame(sku_list,
+                          columns=['ОЗМ',
+                                   'Наименование_краткое',
+                                   'Наименование_полное',
+                                   'Кат_номер',
+                                   'ЕИ',
+                                   'Статус',
+                                   'ID_Аналог',
+                                   'short_processed',
+                                   'full_processed',
+                                   'catalog_processed'])
+        df.to_sql('Nsi', db, if_exists='replace', index=False, dtype="object")
+    pass
+
+
+def doubles_search():
+    print("Идет поиск совпадений, ожидайте сообщение об окончании...")
+    result_list = []
+    insert_ozm_list = pd.read_excel('Input_ozm.xlsx', index_col=0)
+    insert_ozm_list.to_sql('Input_OZM', db2, if_exists='replace', index=True, dtype="object")
+    sql2.execute("SELECT * FROM Input_OZM")
+    input_rows_count = []
+    for rows in sql2:
+        input_rows_count.append(rows)
+    nsi_base = sql.execute("SELECT * FROM Nsi")
+    ozm_input = sql2.execute("SELECT * FROM Input_OZM")
+    with tqdm(total=len(sku_rows_count) * len(input_rows_count),
+              unit_scale=(1 / len(sku_rows_count)), unit='row', colour='green', bar_format="{l_bar} {bar} | строки: {n:.0f}/{total:.0f} | время: [{elapsed} < {remaining} = {eta:%H:%M:%S}]") as pbar:
+        for insert_ozm, s_ozm in product(ozm_input, nsi_base):
+            try:
+                insert_ozm_low = str(insert_ozm[1]).lower()  # перевод в нижний регистр входного запроса
+                insert_ozm_rep = multi_rep(insert_ozm_low, bad_sym)  # замена плохих символов
+                insert_ozm_process = set(re.findall(r'[A-Za-zА-Яа-я]+|\d+', insert_ozm_rep))  # ОЗМ входная обработанная
+            except AttributeError:
+                pass
+            # Обрабатываем краткое наименование ОЗМ
+            try:
+                s_ozm_process_1 = set(re.findall(r'[A-Za-zА-Яа-я]+|\d+', str(s_ozm[7])))  # ОЗМ из базы обработанная
+                s_ozm_inter_1 = s_ozm_process_1.intersection(insert_ozm_process)  # выводим совпадения слов
+                s_ozm_percent_1 = len(s_ozm_inter_1) / len(insert_ozm_process)  # вычисляем процент совпадения
+            except AttributeError:
+                s_ozm_percent_1 = 0
+            # Обрабатываем полное наименование ОЗМ
+            try:
+                s_ozm_process_2 = set(re.findall(r'[A-Za-zА-Яа-я]+|\d+', str(s_ozm[8])))  # ОЗМ из базы обработанная
+                s_ozm_inter_2 = s_ozm_process_2.intersection(insert_ozm_process)  # выводим совпадения слов
+                s_ozm_percent_2 = len(s_ozm_inter_2) / len(insert_ozm_process)  # вычисляем процент совпадения
+            except AttributeError:
+                s_ozm_percent_2 = 0
+            # Обрабатываем каталожный номер ОЗМ
+            try:
+                s_ozm_process_3 = set(re.findall(r'[A-Za-zА-Яа-я]+|\d+', str(s_ozm[9])))  # ОЗМ из базы обработанная
+                s_ozm_inter_3 = s_ozm_process_3.intersection(insert_ozm_process)  # выводим совпадения слов
+                s_ozm_percent_3 = len(s_ozm_inter_3) / len(insert_ozm_process)  # вычисляем процент совпадения
+            except AttributeError:
+                s_ozm_percent_3 = 0
+            max_percent = max(s_ozm_percent_1, s_ozm_percent_2, s_ozm_percent_3)
+            if max_percent >= show_percent:
+                result_list.append(('{:.0%}'.format(max_percent),
+                                    insert_ozm[1],
+                                    s_ozm[0],
+                                    s_ozm[1],
+                                    s_ozm[2],
+                                    s_ozm[3],
+                                    s_ozm[4],
+                                    s_ozm[5],
+                                    s_ozm[6],
+                                    ))
+            pbar.update(1)
+
+        print(f'Готово, строк подобрано: {len(result_list)}, откройте файл - Data_Output.xlsx')
+        print("")
+        return result_list
+
+
+#  Стартовый запрос
+print("Импортировать Excel в базу?")
+print("Введите: Да/Нет (y/n)")
+import_db(input())
+sku_rows_count = []
+sql.execute("SELECT ОЗМ FROM Nsi")
+for rows in sql:
+    sku_rows_count.append(rows)
+print(f'Строк в базе данных: {len(sku_rows_count)}')
+
+i = "Да"
+while i != "Да" or i != "да":
+    print("Введите % соответствия для вывода результата от 0 до 100:")
+    show_percent = float(input()) / 100
+    df = pd.DataFrame(doubles_search(),
+                      columns=['%_соответствия',
+                               'Искомый_материал',
+                               'ОЗМ',
+                               'Наименование_краткое',
+                               'Наименование_полное',
+                               'Кат_номер',
+                               'ЕИ',
+                               'Статус',
+                               'ID_Аналог'])
+
+    with pd.ExcelWriter('Data_Output.xlsx') as data_output:
+        df.to_excel(data_output, index_label='№ п/п')
