@@ -11,7 +11,8 @@ sql2 = db2.cursor()
 
 # справочник плохих символов
 bad_sym = {'b': 'в', 'c': 'с', 'h': 'н', 'p': 'р', 'y': 'у', 'a': 'а',
-           'e': 'е', 'k': 'к', 'm': 'м', 'o': 'о', 't': 'т', 'x': 'х'}
+           'e': 'е', 'k': 'к', 'm': 'м', 'o': 'о', 't': 'т', 'x': 'х',
+           'n': 'н', 'g': 'д', 'r': 'р', 's': 'с', 'd': 'д'}
 
 
 def multi_rep(target_str, bad_sym_rep):
@@ -71,13 +72,18 @@ def doubles_search():
     nsi_base = sql.execute("SELECT * FROM Nsi")
     ozm_input = sql2.execute("SELECT * FROM Input_OZM")
     with tqdm(total=len(sku_rows_count) * len(input_rows_count),
-              unit_scale=(1 / len(sku_rows_count)), unit='row', colour='green', bar_format="{l_bar} {bar} | строки: {n:.0f}/{total:.0f} | время: [{elapsed} < {remaining} = {eta:%H:%M:%S}]") as pbar:
+              unit_scale=(1 / len(sku_rows_count)),
+              unit='row',
+              colour='green',
+              bar_format="{l_bar} {bar} | строки: {n:.0f}/{total:.0f} | время: [{elapsed} < {remaining} = {eta:%H:%M:%S} {rate_fmt}{postfix}]") as pbar:
         for insert_ozm, s_ozm in product(ozm_input, nsi_base):
             try:
                 insert_ozm_low = str(insert_ozm[1]).lower()  # перевод в нижний регистр входного запроса
                 insert_ozm_rep = multi_rep(insert_ozm_low, bad_sym)  # замена плохих символов
                 insert_ozm_process = set(re.findall(r'[A-Za-zА-Яа-я]+|\d+', insert_ozm_rep))  # ОЗМ входная обработанная
             except AttributeError:
+                pass
+            except ZeroDivisionError:
                 pass
             # Обрабатываем краткое наименование ОЗМ
             try:
@@ -86,6 +92,8 @@ def doubles_search():
                 s_ozm_percent_1 = len(s_ozm_inter_1) / len(insert_ozm_process)  # вычисляем процент совпадения
             except AttributeError:
                 s_ozm_percent_1 = 0
+            except ZeroDivisionError:
+                s_ozm_percent_1 = 0
             # Обрабатываем полное наименование ОЗМ
             try:
                 s_ozm_process_2 = set(re.findall(r'[A-Za-zА-Яа-я]+|\d+', str(s_ozm[8])))  # ОЗМ из базы обработанная
@@ -93,12 +101,16 @@ def doubles_search():
                 s_ozm_percent_2 = len(s_ozm_inter_2) / len(insert_ozm_process)  # вычисляем процент совпадения
             except AttributeError:
                 s_ozm_percent_2 = 0
+            except ZeroDivisionError:
+                s_ozm_percent_2 = 0
             # Обрабатываем каталожный номер ОЗМ
             try:
                 s_ozm_process_3 = set(re.findall(r'[A-Za-zА-Яа-я]+|\d+', str(s_ozm[9])))  # ОЗМ из базы обработанная
                 s_ozm_inter_3 = s_ozm_process_3.intersection(insert_ozm_process)  # выводим совпадения слов
                 s_ozm_percent_3 = len(s_ozm_inter_3) / len(insert_ozm_process)  # вычисляем процент совпадения
             except AttributeError:
+                s_ozm_percent_3 = 0
+            except ZeroDivisionError:
                 s_ozm_percent_3 = 0
             max_percent = max(s_ozm_percent_1, s_ozm_percent_2, s_ozm_percent_3)
             if max_percent >= show_percent:
@@ -113,9 +125,6 @@ def doubles_search():
                                     s_ozm[6],
                                     ))
             pbar.update(1)
-
-        print(f'Готово, строк подобрано: {len(result_list)}, откройте файл - Data_Output.xlsx')
-        print("")
         return result_list
 
 
@@ -129,20 +138,30 @@ for rows in sql:
     sku_rows_count.append(rows)
 print(f'Строк в базе данных: {len(sku_rows_count)}')
 
-i = "Да"
-while i != "Да" or i != "да":
+while True:
     print("Введите % соответствия для вывода результата от 0 до 100:")
-    show_percent = float(input()) / 100
-    df = pd.DataFrame(doubles_search(),
-                      columns=['%_соответствия',
-                               'Искомый_материал',
-                               'ОЗМ',
-                               'Наименование_краткое',
-                               'Наименование_полное',
-                               'Кат_номер',
-                               'ЕИ',
-                               'Статус',
-                               'ID_Аналог'])
+    show_percent = int(input()) / 100
+    try:
+        df = pd.DataFrame(doubles_search(),
+                          columns=['%_соответствия',
+                                   'Искомый_материал',
+                                   'ОЗМ',
+                                   'Наименование_краткое',
+                                   'Наименование_полное',
+                                   'Кат_номер',
+                                   'ЕИ',
+                                   'Статус',
+                                   'ID_Аналог'])
 
-    with pd.ExcelWriter('Data_Output.xlsx') as data_output:
-        df.to_excel(data_output, index_label='№ п/п')
+        with pd.ExcelWriter('Data_Output.xlsx') as data_output:
+            df.to_excel(data_output, index_label='№ п/п')
+        print(f'Готово, строк подобрано: {len(df)}, откройте файл - Data_Output.xlsx')
+        print("")
+    except PermissionError:
+        print('ОШИБКА - Закройте файл Data_Output.xlsx')
+        print('')
+    except IndexError:
+        print('ОШИБКА - количество строк на вывод более 1млн., проверьте Input_ozm.xlsx')
+        print('')
+    except Exception as error:
+        print(error)
