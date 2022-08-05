@@ -1,7 +1,6 @@
 import pandas as pd
 import sqlite3
 import re
-import time
 from tqdm import tqdm
 from itertools import product
 db = sqlite3.connect('DataBase1.db')
@@ -75,7 +74,9 @@ def doubles_search():
               unit_scale=(1 / len(sku_rows_count)),
               unit='row',
               colour='green',
-              bar_format="{l_bar} {bar} | строки: {n:.0f}/{total:.0f} | время: [{elapsed} < {remaining} = {eta:%H:%M:%S} {rate_fmt}{postfix}]") as pbar:
+              leave=False,
+              ncols=90,
+              bar_format="{l_bar} {bar} | строки: {n:.0f}/{total:.0f} | время: [{elapsed} < {remaining} = {eta:%H:%M:%S}] | {rate_fmt}{postfix}") as pbar:
         for insert_ozm, s_ozm in product(ozm_input, nsi_base):
             try:
                 insert_ozm_low = str(insert_ozm[1]).lower()  # перевод в нижний регистр входного запроса
@@ -158,10 +159,14 @@ while True:
         print(f'Готово, строк подобрано: {len(df)}, откройте файл - Data_Output.xlsx')
         print("")
     except PermissionError:
+        print('')
         print('ОШИБКА - Закройте файл Data_Output.xlsx')
         print('')
     except IndexError:
+        print('')
         print('ОШИБКА - количество строк на вывод более 1млн., проверьте Input_ozm.xlsx')
         print('')
     except Exception as error:
+        print('')
         print(error)
+        print('')
