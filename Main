@@ -1,4 +1,5 @@
 import pandas as pd
+import sqlalchemy
 import sqlite3
 import re
 from tqdm import tqdm
@@ -37,7 +38,7 @@ def import_db(import_q):
     if import_q.lower() in yes_list:
         print("Подождите, идет импортирование...")
         data_xlsx = pd.read_excel('Nsi.xlsx', index_col=0)
-        data_xlsx.to_sql('Nsi', db, if_exists='replace', index=True, dtype="object")
+        data_xlsx.to_sql('Nsi', db, if_exists='replace', index=True)
         sku_base = sql.execute("SELECT * FROM Nsi")
         for sku in sku_base:
             sku_process_1 = ozm_process(sku[1])
@@ -65,24 +66,32 @@ def import_db(import_q):
                                    'short_processed',
                                    'full_processed',
                                    'catalog_processed'])
-        df.to_sql('Nsi', db, if_exists='replace', index=False, dtype="object")
+        df.to_sql('Nsi', db, if_exists='replace', index=False)
     pass
 
 
 def read_input():
     input_list = []
     insert_ozm_list = pd.read_excel('Input_ozm.xlsx', index_col=0)
-    insert_ozm_list.to_sql('Input_OZM', db2, if_exists='replace', index=True, dtype="STRING")
+    insert_ozm_list.to_sql('Input_OZM', db2, if_exists='replace', index=True)
     ozm_input = sql2.execute("SELECT * FROM Input_OZM")
     for input in ozm_input:
         ozm_proc = ozm_process(input[1])
+        id_analog = ""
+        if input[0] != None:
+            nsi_base = sql.execute("SELECT * FROM Nsi WHERE ID_Аналог IS NOT NULL")
+            for i in nsi_base:
+                if input[0] == i[0]:
+                    id_analog += str(i[6])
+                    break
         input_list.append((
             input[0],
             input[1],
-            '',
+            id_analog,
             ozm_proc
                            ))
-    sql2.execute("DELETE FROM Input_OZM")
+    sql2.execute("DROP TABLE Input_OZM")
+    sql2.execute("CREATE TABLE Input_OZM (Keys INTEGER, Что_ищем TEXT, ID_Аналога REAL, Обработанный_текст TEXT)")
     sql2.executemany("INSERT INTO Input_OZM VALUES (?, ?, ?, ?)", input_list)
     db2.commit()
 
@@ -135,7 +144,9 @@ def doubles_search():
             max_percent = max(s_ozm_percent_1, s_ozm_percent_2, s_ozm_percent_3)
             if max_percent >= show_percent:
                 result_list.append(('{:.0%}'.format(max_percent),
+                                    insert_ozm[0],
                                     insert_ozm[1],
+                                    insert_ozm[2],
                                     s_ozm[0],
                                     s_ozm[1],
                                     s_ozm[2],
@@ -167,11 +178,13 @@ except Exception as error:
 while True:
     print("Введите % соответствия для вывода результата от 0 до 100:")
     show_percent = int(input()) / 100
+    read_input()
     try:
-        read_input()
         df = pd.DataFrame(doubles_search(),
                           columns=['%_соответствия',
+                                   'ОЗМ_искомый',
                                    'Искомый_материал',
+                                   'ID_Аналога_исходный',
                                    'ОЗМ',
                                    'Наименование_краткое',
                                    'Наименование_полное',
