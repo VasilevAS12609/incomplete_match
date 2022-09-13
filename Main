@@ -23,7 +23,7 @@ def multi_rep(target_str, bad_sym_rep):
     return target_str
 
 
-def ozm_process(text: str):
+def ozm_process(text):
     try:
         text = multi_rep(text.lower(), bad_sym)
         text = str(set(re.findall(r'[a-zа-я]+|\d+', text)))
@@ -75,11 +75,11 @@ def read_input():
     insert_ozm_list = pd.read_excel('Input_ozm.xlsx', index_col=0)
     insert_ozm_list.to_sql('Input_OZM', db2, if_exists='replace', index=True)
     ozm_input = sql2.execute("SELECT * FROM Input_OZM")
+    nsi_base = sql.execute("SELECT * FROM Nsi WHERE ID_Аналог IS NOT NULL")
     for input in ozm_input:
-        ozm_proc = ozm_process(input[1])
+        ozm_proc = ozm_process(str(input[1]))
         id_analog = ""
         if input[0] != None:
-            nsi_base = sql.execute("SELECT * FROM Nsi WHERE ID_Аналог IS NOT NULL")
             for i in nsi_base:
                 if input[0] == i[0]:
                     id_analog += str(i[6])
